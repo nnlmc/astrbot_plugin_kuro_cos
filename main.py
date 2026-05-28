@@ -28,6 +28,141 @@ DEFAULT_USER_AGENT = (
 DEFAULT_DEV_CODE = "H0O9l04JUG341k5UpUTMNpnGawC5Qt9p"
 DEFAULT_DISTINCT_ID = "195be91535f592-0915a368d4173f-4c657b58-1327104-195be9153601740"
 URL_RE = re.compile(r"https?://[^\s'\"<>，。！？、）)\]}]+", re.IGNORECASE)
+POST_TEXT_KEYS = (
+    "postTitle",
+    "title",
+    "subject",
+    "content",
+    "summary",
+    "desc",
+    "description",
+    "postContent",
+    "postDetail",
+    "textContent",
+    "richContent",
+    "articleContent",
+    "markdownContent",
+    "topicContent",
+)
+REPOST_FORBIDDEN_KEYWORDS = (
+    "禁止搬运",
+    "禁止转载",
+    "禁止转发",
+    "禁止转帖",
+    "禁止二传",
+    "禁止二次上传",
+    "禁止二改",
+    "禁止盗图",
+    "严禁搬运",
+    "严禁转载",
+    "严禁转发",
+    "严禁二传",
+    "请勿搬运",
+    "请勿转载",
+    "请勿转发",
+    "请勿二传",
+    "请勿二改",
+    "勿搬运",
+    "勿转载",
+    "勿转发",
+    "勿二传",
+    "不要搬运",
+    "不要转载",
+    "不要转发",
+    "不要二传",
+    "请不要搬运",
+    "请不要转载",
+    "请不要转发",
+    "不得搬运",
+    "不得转载",
+    "不得转发",
+    "不得二传",
+    "不许搬运",
+    "不许转载",
+    "不许转发",
+    "不许二传",
+    "不准搬运",
+    "不准转载",
+    "不准转发",
+    "不准二传",
+    "不能搬运",
+    "不能转载",
+    "不能转发",
+    "不能二传",
+    "不可搬运",
+    "不可转载",
+    "不可转发",
+    "不可二传",
+    "不允许搬运",
+    "不允许转载",
+    "不允许转发",
+    "不允许二传",
+    "谢绝搬运",
+    "谢绝转载",
+    "谢绝转发",
+    "拒绝搬运",
+    "拒绝转载",
+    "拒绝转发",
+    "婉拒搬运",
+    "婉拒转载",
+    "未经授权转载",
+    "未经授权搬运",
+    "未经授权转发",
+    "未经授权不得转载",
+    "未经授权请勿转载",
+    "未经允许转载",
+    "未经允许搬运",
+    "未经允许转发",
+    "未经许可转载",
+    "未经许可搬运",
+    "未经许可转发",
+    "未授权转载",
+    "未授权搬运",
+    "无授权转载",
+    "无授权搬运",
+    "擅自转载",
+    "擅自搬运",
+    "私自转载",
+    "私自搬运",
+    "不授权转载",
+    "不授权搬运",
+    "不开放转载",
+    "不开放搬运",
+    "禁搬运",
+    "禁转载",
+    "禁转",
+    "禁二传",
+    "禁二改",
+    "禁止任何形式转载",
+    "禁止任何形式搬运",
+    "禁止任何形式转发",
+    "do not repost",
+    "don't repost",
+    "dont repost",
+    "please do not repost",
+    "please don't repost",
+    "no repost",
+    "no re-post",
+    "repost prohibited",
+    "reposting prohibited",
+    "repost forbidden",
+    "unauthorized repost",
+    "unauthorised repost",
+    "do not reupload",
+    "do not re-upload",
+    "no reupload",
+    "no re-upload",
+    "reupload prohibited",
+    "re-upload prohibited",
+    "転載禁止",
+    "無断転載禁止",
+    "無断使用禁止",
+    "無断転載お断り",
+    "無断転載は禁止",
+    "二次配布禁止",
+    "무단전재금지",
+    "무단배포금지",
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +193,36 @@ def _get_config_value(config: AstrBotConfig | None, key: str, default: Any) -> A
 def _clean_text(value: Any, limit: int = 120) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:limit]
+
+
+def _text_from_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_text_from_value(child) for child in value.values())
+    if isinstance(value, list):
+        return " ".join(_text_from_value(child) for child in value)
+    return ""
+
+
+def _collect_post_text(node: dict[str, Any]) -> str:
+    return " ".join(_text_from_value(node.get(key)) for key in POST_TEXT_KEYS if key in node)
+
+
+def _normalize_for_keyword_match(text: str) -> str:
+    text = text.lower()
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def _has_repost_forbidden_text(node: dict[str, Any]) -> bool:
+    text = _collect_post_text(node)
+    if not text:
+        return False
+    compact_text = _normalize_for_keyword_match(text)
+    for keyword in REPOST_FORBIDDEN_KEYWORDS:
+        if keyword.lower() in text.lower() or _normalize_for_keyword_match(keyword) in compact_text:
+            return True
+    return False
 
 
 def _normalize_url(value: Any) -> str | None:
@@ -164,6 +329,9 @@ def _extract_post_media(node: dict[str, Any]) -> tuple[MediaItem, ...]:
 
 
 def _post_from_node(node: dict[str, Any]) -> KuroPost | None:
+    if _has_repost_forbidden_text(node):
+        return None
+
     post_id = str(node.get("postId") or node.get("post_id") or node.get("id") or "").strip()
     title = _clean_text(node.get("postTitle") or node.get("title") or node.get("subject") or "鸣潮 COS", 80)
     summary = _clean_text(node.get("content") or node.get("summary") or node.get("desc") or node.get("postContent") or "", 160)
