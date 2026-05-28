@@ -51,13 +51,56 @@ COS_KEYWORDS = (
     "coser",
     "cosplay",
     "正片",
-    "预告",
     "返图",
     "试衣",
     "同人cos",
     "同人 cosplay",
     "妆造",
     "场照",
+    "出镜",
+    "摄影",
+    "棚拍",
+    "外景",
+)
+NON_COS_SEARCH_KEYWORDS = (
+    "攻略",
+    "养成",
+    "培养",
+    "配队",
+    "阵容",
+    "抽卡",
+    "抽取建议",
+    "卡池",
+    "强度",
+    "测评",
+    "评测",
+    "教程",
+    "机制",
+    "手法",
+    "打法",
+    "深塔",
+    "逆境深塔",
+    "刷分",
+    "声骸",
+    "词条",
+    "武器",
+    "共鸣链",
+    "技能",
+    "加点",
+    "面板",
+    "毕业",
+    "材料",
+    "突破",
+    "任务",
+    "活动",
+    "解谜",
+    "剧情",
+    "卡牌",
+    "桌游",
+    "押注",
+    "投票",
+    "兑换码",
+    "签到",
 )
 SEARCH_KEYWORD_SUFFIXES = (
     "cos",
@@ -68,7 +111,6 @@ SEARCH_KEYWORD_SUFFIXES = (
     "COS正片",
     "同人cos",
     "试衣",
-    "预告",
     "返图",
 )
 REPOST_FORBIDDEN_KEYWORDS = (
@@ -282,9 +324,28 @@ def _is_search_result_relevant(node: dict[str, Any], query: str, *, strict_cos: 
     normalized_query = _normalize_for_keyword_match(query)
     if normalized_query and normalized_query not in normalized_text:
         return False
-    if not strict_cos:
-        return True
-    return any(_normalize_for_keyword_match(keyword) in normalized_text for keyword in COS_KEYWORDS)
+
+    normalized_cos_keywords = [_normalize_for_keyword_match(keyword) for keyword in COS_KEYWORDS]
+    normalized_negative_keywords = [_normalize_for_keyword_match(keyword) for keyword in NON_COS_SEARCH_KEYWORDS]
+    title_text = _strip_markup(node.get("postTitle") or node.get("title") or node.get("subject") or "")
+    normalized_title = _normalize_for_keyword_match(title_text)
+    title_has_cos_keyword = any(keyword in normalized_title for keyword in normalized_cos_keywords)
+    title_has_negative_keyword = any(keyword in normalized_title for keyword in normalized_negative_keywords)
+    if title_has_negative_keyword:
+        return False
+
+    text_has_cos_keyword = any(keyword in normalized_text for keyword in normalized_cos_keywords)
+    if not text_has_cos_keyword:
+        return False
+
+    text_has_negative_keyword = any(keyword in normalized_text for keyword in normalized_negative_keywords)
+    if text_has_negative_keyword and not title_has_cos_keyword:
+        return False
+
+    # 标题没有 COS 标识时，必须至少有正文媒体，避免把攻略/活动帖封面当成 COS 兜底发送。
+    if not title_has_cos_keyword and not _extract_post_media(node):
+        return False
+    return True
 
 
 def _has_repost_forbidden_text(node: dict[str, Any]) -> bool:
