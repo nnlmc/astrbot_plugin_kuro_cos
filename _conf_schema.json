@@ -44,6 +44,16 @@
     "type": "bool",
     "default": true
   },
+  "recall_after_send": {
+    "description": "是否在发送后自动撤回机器人发出的消息；目前主要支持 aiocqhttp/OneBot 平台",
+    "type": "bool",
+    "default": false
+  },
+  "recall_delay_seconds": {
+    "description": "发送后多少秒自动撤回，最大 120 秒",
+    "type": "float",
+    "default": 60.0
+  },
   "download_timeout": {
     "description": "下载单个媒体的超时时间，单位秒",
     "type": "float",

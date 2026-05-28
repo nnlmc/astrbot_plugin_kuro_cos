@@ -30,6 +30,7 @@ pip install -r requirements.txt
 - 命中“禁止搬运/禁止转载/禁止二传/Do not repost”等限制转载关键词时会跳过该帖子；
 - 不再扫描整条帖子 JSON，所以不会把用户头像、头像框、等级图标抓出来；
 - 默认下载到本地后发送，发送后自动删除本地图片/视频；
+- 可在控制台开启发送后自动撤回，并配置撤回延迟，最大 `120` 秒；
 - 默认使用合并转发发送整条帖子，可在控制台关闭。
 
 ## 配置重点
@@ -43,6 +44,10 @@ pip install -r requirements.txt
 - `forward_sender_name`：合并转发节点显示的发送者昵称；
 - `forward_sender_id`：合并转发节点显示的发送者 QQ/ID；
 - `delete_after_send`：发送后是否自动删除本地媒体；
+- `recall_after_send`：是否在发送后自动撤回机器人发出的消息；
+- `recall_delay_seconds`：发送后多少秒自动撤回，最大 `120` 秒，超过会自动按 `120` 秒处理；
 - `forum_id`：鸣潮 COS 板块 ID，默认 `17`。
+
+> 自动撤回需要平台能返回机器人发出的消息 ID，目前主要支持 `aiocqhttp`/OneBot；其他平台会自动退回普通发送，不影响正常使用。
 
 如果还是重复，把 `request_rounds` 和 `default_page_size` 调大。

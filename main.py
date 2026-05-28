@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import random
 import re
 import time
@@ -372,6 +373,7 @@ class KuroCosPlugin(Star):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Semaphore(1)
         self._recent_post_ids: deque[str] = deque(maxlen=80)
+        self._recall_tasks: set[asyncio.Task[None]] = set()
 
     @filter.command("鸣潮cos")
     async def kuro_cos_command(self, event: AstrMessageEvent):
@@ -386,13 +388,146 @@ class KuroCosPlugin(Star):
             post = posts[0]
             self._remember_post(post)
             chain, local_paths = await self._build_post_chain(post)
+            sent_by_direct_send = False
             try:
+                if self._recall_after_send_enabled():
+                    sent_by_direct_send, sent_message_ids = await self._send_chain_and_collect_ids(event, chain)
+                    if sent_by_direct_send:
+                        if sent_message_ids:
+                            self._schedule_recall(event, sent_message_ids)
+                        return
                 yield event.chain_result(chain)
             finally:
+                if sent_by_direct_send:
+                    event.stop_event()
                 if bool(_get_config_value(self.config, "delete_after_send", True)):
                     self._cleanup_local_files(local_paths)
 
         event.stop_event()
+
+    def _recall_after_send_enabled(self) -> bool:
+        return bool(_get_config_value(self.config, "recall_after_send", False))
+
+    def _recall_delay_seconds(self) -> float:
+        try:
+            delay = float(_get_config_value(self.config, "recall_delay_seconds", 60.0))
+        except (TypeError, ValueError):
+            delay = 60.0
+        return max(0.0, min(delay, 120.0))
+
+    async def _send_chain_and_collect_ids(self, event: AstrMessageEvent, chain: list[Any]) -> tuple[bool, list[str]]:
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            self._debug("当前平台不支持自动撤回：缺少 bot 客户端")
+            return False, []
+
+        try:
+            event_module = importlib.import_module("astrbot.api.event")
+            aiocqhttp_module = importlib.import_module(
+                "astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event"
+            )
+            message_chain_cls = getattr(event_module, "MessageChain")
+            aiocqhttp_event_cls = getattr(aiocqhttp_module, "AiocqhttpMessageEvent")
+        except Exception as exc:
+            self._debug(f"当前环境无法加载 aiocqhttp 发送组件，跳过自动撤回直发：{exc!r}")
+            return False, []
+
+        parse_onebot_json = getattr(aiocqhttp_event_cls, "_parse_onebot_json", None)
+        if parse_onebot_json is None:
+            self._debug("当前 AstrBot 版本缺少 OneBot 消息转换接口，跳过自动撤回直发")
+            return False, []
+
+        is_group = bool(event.get_group_id())
+        session_id = event.get_group_id() if is_group else event.get_sender_id()
+        if not str(session_id).isdigit():
+            self._debug(f"当前会话 ID 不可用于 OneBot 发送：{session_id}")
+            return False, []
+
+        sent_message_ids: list[str] = []
+        sent_any = False
+        try:
+            for message_chain in self._split_chain_for_recall(message_chain_cls(chain=chain)):
+                result = await self._send_onebot_chain(bot, message_chain, parse_onebot_json, is_group, str(session_id))
+                sent_any = True
+                message_id = self._extract_sent_message_id(result)
+                if message_id:
+                    sent_message_ids.append(message_id)
+                await asyncio.sleep(0.5)
+            if sent_any and not sent_message_ids:
+                self._debug("已直发消息，但平台未返回 message_id，无法自动撤回")
+            return sent_any, sent_message_ids
+        except Exception as exc:
+            if sent_any:
+                logger.warning(f"[kuro_cos] 自动撤回直发部分成功，跳过普通发送以避免重复：{exc!r}")
+                return True, sent_message_ids
+            logger.warning(f"[kuro_cos] 自动撤回直发失败，改用普通发送：{exc!r}")
+            return False, []
+
+    async def _send_onebot_chain(self, bot: Any, message_chain: Any, parse_onebot_json: Any, is_group: bool, session_id: str) -> Any:
+        nodes_cls = getattr(Comp, "Nodes", None)
+        node_cls = getattr(Comp, "Node", None)
+        if len(message_chain.chain) == 1:
+            item = message_chain.chain[0]
+            if nodes_cls is not None and isinstance(item, nodes_cls):
+                payload = await item.to_dict()
+                if is_group:
+                    payload["group_id"] = session_id
+                    return await bot.call_action("send_group_forward_msg", **payload)
+                payload["user_id"] = session_id
+                return await bot.call_action("send_private_forward_msg", **payload)
+            if node_cls is not None and isinstance(item, node_cls) and nodes_cls is not None:
+                nodes = nodes_cls([item])
+                return await self._send_onebot_chain(bot, message_chain.derive([nodes]), parse_onebot_json, is_group, session_id)
+
+        messages = await parse_onebot_json(message_chain)
+        if not messages:
+            return None
+        if is_group:
+            return await bot.send_group_msg(group_id=int(session_id), message=messages)
+        return await bot.send_private_msg(user_id=int(session_id), message=messages)
+
+    def _split_chain_for_recall(self, message_chain: Any) -> list[Any]:
+        separate_types = tuple(
+            item for item in (getattr(Comp, "Node", None), getattr(Comp, "Nodes", None), getattr(Comp, "File", None)) if item
+        )
+        if not separate_types or not any(isinstance(item, separate_types) for item in message_chain.chain):
+            return [message_chain]
+
+        chunks: list[Any] = []
+        for item in message_chain.chain:
+            if isinstance(item, separate_types):
+                chunks.append(message_chain.derive([item]))
+            elif chunks and not isinstance(chunks[-1].chain[0], separate_types):
+                chunks[-1].chain.append(item)
+            else:
+                chunks.append(message_chain.derive([item]))
+        return chunks
+
+    @staticmethod
+    def _extract_sent_message_id(result: Any) -> str | None:
+        if isinstance(result, dict):
+            value = result.get("message_id") or result.get("msg_id") or result.get("id")
+            return str(value) if value is not None else None
+        value = getattr(result, "message_id", None) or getattr(result, "msg_id", None) or getattr(result, "id", None)
+        return str(value) if value is not None else None
+
+    def _schedule_recall(self, event: AstrMessageEvent, message_ids: list[str]):
+        delay = self._recall_delay_seconds()
+        task = asyncio.create_task(self._recall_messages_later(event, message_ids, delay))
+        self._recall_tasks.add(task)
+        task.add_done_callback(self._recall_tasks.discard)
+
+    async def _recall_messages_later(self, event: AstrMessageEvent, message_ids: list[str], delay: float):
+        await asyncio.sleep(delay)
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return
+        for message_id in message_ids:
+            try:
+                await bot.call_action("delete_msg", message_id=int(message_id) if str(message_id).isdigit() else message_id)
+                self._debug(f"已撤回消息 message_id={message_id}")
+            except Exception as exc:
+                logger.warning(f"[kuro_cos] 撤回消息失败 message_id={message_id} error={exc!r}")
 
     async def _fetch_random_posts(self) -> list[KuroPost]:
         payloads: list[Any] = []
