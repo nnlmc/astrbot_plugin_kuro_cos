@@ -17,12 +17,12 @@
   "default_page_size": {
     "description": "每次从库街区列表接口取多少条帖子；越大随机池越大",
     "type": "int",
-    "default": 5
+    "default": 20
   },
   "request_rounds": {
     "description": "一次命令随机请求多少页；越大越不容易重复",
     "type": "int",
-    "default": 8
+    "default": 50
   },
   "random_page_max": {
     "description": "随机页码上限",
