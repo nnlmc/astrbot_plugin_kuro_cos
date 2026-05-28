@@ -518,7 +518,7 @@ class KuroCosPlugin(Star):
         self._recent_post_ids: deque[str] = deque(maxlen=80)
         self._recall_tasks: set[asyncio.Task[None]] = set()
 
-    @filter.command("鸣潮cos")
+    @filter.command("鸣潮cos", alias={"wwcos"})
     async def kuro_cos_command(self, event: AstrMessageEvent):
         """获取鸣潮库街区 COS 图片/视频；可追加角色名搜索。"""
         keyword = self._extract_search_keyword(event)
@@ -562,7 +562,7 @@ class KuroCosPlugin(Star):
             except Exception:
                 pass
         message = re.sub(r"\s+", " ", str(message)).strip()
-        for command_name in ("鸣潮cos",):
+        for command_name in ("鸣潮cos", "wwcos"):
             if message == command_name:
                 return ""
             if message.startswith(f"{command_name} "):
