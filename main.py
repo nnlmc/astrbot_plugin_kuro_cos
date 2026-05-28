@@ -530,7 +530,6 @@ class KuroCosPlugin(Star):
                 logger.warning(f"[kuro_cos] 撤回消息失败 message_id={message_id} error={exc!r}")
 
     async def _fetch_random_posts(self) -> list[KuroPost]:
-        payloads: list[Any] = []
         timeout = float(_get_config_value(self.config, "request_timeout", 15.0))
         base = str(_get_config_value(self.config, "api_base", "https://api.kurobbs.com")).rstrip("/")
         endpoint = str(_get_config_value(self.config, "list_endpoint", "/forum/list"))
@@ -556,40 +555,82 @@ class KuroCosPlugin(Star):
             "version": "2.4.4",
         }
         url = endpoint if endpoint.startswith("http") else f"{base}/{endpoint.lstrip('/')}"
-        page_indexes = random.sample(range(1, random_page_max + 1), k=min(request_rounds, random_page_max))
-
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
-            for page_index in page_indexes:
-                body = {
-                    "gameId": game_id,
-                    "forumId": forum_id,
-                    "searchType": search_type,
-                    "pageIndex": page_index,
-                    "pageSize": page_size,
-                }
-                try:
-                    response = await client.post(url, data=body)
-                    response.raise_for_status()
-                    payloads.append(response.json())
-                    self._debug(f"列表接口完成 pageIndex={page_index}")
-                except Exception as exc:
-                    self._debug(f"列表接口失败 url={url} pageIndex={page_index} error={exc!r}")
+        target_request_count = min(request_rounds, random_page_max)
+        front_page_count = min(random_page_max, max(1, min(20, max(1, request_rounds // 2))))
+        page_indexes = list(range(1, front_page_count + 1))
+        random_pick_count = target_request_count - len(page_indexes)
+        if random_pick_count > 0 and front_page_count < random_page_max:
+            page_indexes.extend(
+                random.sample(
+                    range(front_page_count + 1, random_page_max + 1),
+                    k=min(random_pick_count, random_page_max - front_page_count),
+                )
+            )
+        random.shuffle(page_indexes)
 
         posts: list[KuroPost] = []
+        recent_posts: list[KuroPost] = []
         seen: set[str] = set()
-        for payload in payloads:
-            for node in _extract_post_list(payload):
+        requested_pages: set[int] = set()
+
+        def collect_posts(payload: Any, page_index: int):
+            nodes = _extract_post_list(payload)
+            if not nodes:
+                self._debug(f"列表接口为空 pageIndex={page_index}")
+                return
+            accepted_count = 0
+            for node in nodes:
                 post = _post_from_node(node)
                 if not post:
                     continue
                 key = post.post_id or post.url or post.title
-                if key in seen or key in self._recent_post_ids:
+                if key in seen:
                     continue
                 seen.add(key)
-                posts.append(post)
+                if key in self._recent_post_ids:
+                    recent_posts.append(post)
+                else:
+                    posts.append(post)
+                accepted_count += 1
+            self._debug(f"列表接口完成 pageIndex={page_index} posts={len(nodes)} candidates={accepted_count}")
 
-        random.shuffle(posts)
-        for post in posts:
+        async def fetch_page(client: httpx.AsyncClient, page_index: int):
+            requested_pages.add(page_index)
+            body = {
+                "gameId": game_id,
+                "forumId": forum_id,
+                "searchType": search_type,
+                "pageIndex": page_index,
+                "pageSize": page_size,
+            }
+            try:
+                response = await client.post(url, data=body)
+                response.raise_for_status()
+                collect_posts(response.json(), page_index)
+            except Exception as exc:
+                self._debug(f"列表接口失败 url={url} pageIndex={page_index} error={exc!r}")
+
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+            for page_index in page_indexes:
+                await fetch_page(client, page_index)
+
+            if not posts:
+                fallback_limit = min(random_page_max, max(front_page_count, 30))
+                fallback_pages = [page for page in range(1, fallback_limit + 1) if page not in requested_pages]
+                if fallback_pages:
+                    self._debug(f"未获取到新候选，回退检查前 {fallback_limit} 页")
+                for page_index in fallback_pages:
+                    await fetch_page(client, page_index)
+                    if posts:
+                        break
+
+        candidates = posts
+        if not candidates and recent_posts:
+            candidates = recent_posts
+            self._debug("没有新的正文媒体帖子，使用最近候选避免空结果")
+
+        random.shuffle(candidates)
+        for post in candidates:
             shuffled_media = list(post.media)
             random.shuffle(shuffled_media)
             yield_post = KuroPost(
@@ -603,7 +644,7 @@ class KuroCosPlugin(Star):
             self._debug(f"候选帖子 post_id={yield_post.post_id} media={len(yield_post.media)}")
             return [yield_post]
 
-        self._debug("本轮没有新的正文媒体帖子")
+        self._debug("本轮没有可用正文媒体帖子")
         return []
 
     async def _build_post_chain(self, post: KuroPost) -> tuple[list[Any], list[str]]:
