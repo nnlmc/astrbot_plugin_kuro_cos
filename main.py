@@ -410,9 +410,9 @@ class KuroCosPlugin(Star):
 
     def _recall_delay_seconds(self) -> float:
         try:
-            delay = float(_get_config_value(self.config, "recall_delay_seconds", 60.0))
+            delay = float(_get_config_value(self.config, "recall_delay_seconds", 90.0))
         except (TypeError, ValueError):
-            delay = 60.0
+            delay = 90.0
         return max(0.0, min(delay, 120.0))
 
     async def _send_chain_and_collect_ids(self, event: AstrMessageEvent, chain: list[Any]) -> tuple[bool, list[str]]:
@@ -530,15 +530,15 @@ class KuroCosPlugin(Star):
                 logger.warning(f"[kuro_cos] 撤回消息失败 message_id={message_id} error={exc!r}")
 
     async def _fetch_random_posts(self) -> list[KuroPost]:
-        timeout = float(_get_config_value(self.config, "request_timeout", 15.0))
+        timeout = float(_get_config_value(self.config, "request_timeout", 12.0))
         base = str(_get_config_value(self.config, "api_base", "https://api.kurobbs.com")).rstrip("/")
         endpoint = str(_get_config_value(self.config, "list_endpoint", "/forum/list"))
         page_size = max(1, int(_get_config_value(self.config, "default_page_size", 20)))
         game_id = int(_get_config_value(self.config, "game_id", 3))
         forum_id = int(_get_config_value(self.config, "forum_id", 17))
         search_type = int(_get_config_value(self.config, "search_type", 3))
-        random_page_max = max(1, int(_get_config_value(self.config, "random_page_max", 500)))
-        request_rounds = max(1, int(_get_config_value(self.config, "request_rounds", 50)))
+        random_page_max = max(1, int(_get_config_value(self.config, "random_page_max", 80)))
+        request_rounds = max(1, int(_get_config_value(self.config, "request_rounds", 30)))
         dev_code = str(_get_config_value(self.config, "dev_code", DEFAULT_DEV_CODE))
         distinct_id = str(_get_config_value(self.config, "distinct_id", DEFAULT_DISTINCT_ID))
 
@@ -648,14 +648,14 @@ class KuroCosPlugin(Star):
         return []
 
     async def _build_post_chain(self, post: KuroPost) -> tuple[list[Any], list[str]]:
-        max_media = int(_get_config_value(self.config, "max_media_per_post", 8))
+        max_media = int(_get_config_value(self.config, "max_media_per_post", 6))
         download_media = bool(_get_config_value(self.config, "download_media", True))
         use_forward = bool(
             _get_config_value(self.config, "use_forward", _get_config_value(self.config, "forward_enable", True))
         )
         node_name = str(
-            _get_config_value(self.config, "forward_sender_name", _get_config_value(self.config, "forward_node_name", "库街区COS"))
-        ).strip() or "库街区COS"
+            _get_config_value(self.config, "forward_sender_name", _get_config_value(self.config, "forward_node_name", "鸣潮COS"))
+        ).strip() or "鸣潮COS"
         node_uin = str(
             _get_config_value(self.config, "forward_sender_id", _get_config_value(self.config, "forward_node_uin", "10000"))
         ).strip() or "10000"
@@ -692,7 +692,7 @@ class KuroCosPlugin(Star):
             return str(values.get("title") or values.get("ai_name") or "鸣潮 COS")
 
     async def _download_media(self, media: MediaItem, post_id: str, index: int) -> str | None:
-        timeout = float(_get_config_value(self.config, "download_timeout", 25.0))
+        timeout = float(_get_config_value(self.config, "download_timeout", 20.0))
         suffix = _url_suffix(media.url)
         if suffix not in MEDIA_EXTENSIONS:
             suffix = ".jpg" if media.kind == "image" else ".mp4"

@@ -23,9 +23,10 @@ pip install -r requirements.txt
 ## 当前策略
 
 - 只请求库街区 COS 板块：`gameId=3`、`forumId=17`、`searchType=3`；
-- 每次随机请求多页，默认从 `1~500` 页里抽 `50` 页，并固定混入前段页来减少抽到空页的概率；
+- 每次随机请求多页，默认从 `1~80` 页里抽 `30` 页，并固定混入前段页来减少抽到空页的概率；
 - 每页默认取 `20` 条，组合成候选池后随机挑选；
 - 如果随机页没有可用候选，会自动回退检查前段页，尽量避免直接返回“没找到”；
+- 单条帖子默认最多发送 `6` 个正文媒体，降低刷屏和下载失败概率；
 - 记住最近发过的帖子，降低连续重复概率；
 - 只读取帖子正文媒体字段：`imgContent`、图片列表、视频字段、正文直链；
 - 命中“禁止搬运/禁止转载/禁止二传/Do not repost”等限制转载关键词时会跳过该帖子；
@@ -34,10 +35,14 @@ pip install -r requirements.txt
 - 可在控制台开启发送后自动撤回，并配置撤回延迟，最大 `120` 秒；
 - 默认使用合并转发发送整条帖子，可在控制台关闭。
 
+## 推荐默认配置
+
+当前内置默认值偏向稳定可用：`request_rounds=30`、`random_page_max=80`、`default_page_size=20`、`max_media_per_post=6`、`request_timeout=12.0`、`download_timeout=20.0`、`recall_delay_seconds=90.0`。
+
 ## 配置重点
 
 - `request_rounds`：一次随机请求多少页，越大越不容易重复；
-- `random_page_max`：随机页码上限；
+- `random_page_max`：随机页码上限，过大可能抽到较多空页；
 - `default_page_size`：每页取多少条帖子；
 - `max_media_per_post`：单条帖子最多发送多少个正文媒体；
 - `download_media`：是否先下载媒体再发；

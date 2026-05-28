@@ -7,7 +7,7 @@
   "forward_sender_name": {
     "description": "合并转发节点里显示的发送者昵称",
     "type": "string",
-    "default": "库街区COS"
+    "default": "鸣潮COS"
   },
   "forward_sender_id": {
     "description": "合并转发节点里显示的发送者 QQ/ID",
@@ -22,17 +22,17 @@
   "request_rounds": {
     "description": "一次命令随机请求多少页；越大越不容易重复",
     "type": "int",
-    "default": 50
+    "default": 30
   },
   "random_page_max": {
-    "description": "随机页码上限",
+    "description": "随机页码上限；建议不要过大，避免抽到大量空页",
     "type": "int",
-    "default": 500
+    "default": 80
   },
   "max_media_per_post": {
     "description": "单条帖子最多发送多少个正文图片/视频资源",
     "type": "int",
-    "default": 8
+    "default": 6
   },
   "download_media": {
     "description": "是否下载媒体后从本地发送；关闭后直接发送远程链接",
@@ -52,17 +52,17 @@
   "recall_delay_seconds": {
     "description": "发送后多少秒自动撤回，最大 120 秒",
     "type": "float",
-    "default": 60.0
+    "default": 90.0
   },
   "download_timeout": {
     "description": "下载单个媒体的超时时间，单位秒",
     "type": "float",
-    "default": 25.0
+    "default": 20.0
   },
   "request_timeout": {
     "description": "请求库街区接口的超时时间，单位秒",
     "type": "float",
-    "default": 15.0
+    "default": 12.0
   },
   "api_base": {
     "description": "库街区 API 根地址，通常不用改",
