@@ -1,0 +1,97 @@
+{
+  "use_forward": {
+    "description": "是否使用合并转发发送帖子内容；关闭后按普通消息逐条发送",
+    "type": "bool",
+    "default": true
+  },
+  "forward_sender_name": {
+    "description": "合并转发节点里显示的发送者昵称",
+    "type": "string",
+    "default": "库街区COS"
+  },
+  "forward_sender_id": {
+    "description": "合并转发节点里显示的发送者 QQ/ID",
+    "type": "string",
+    "default": "10000"
+  },
+  "default_page_size": {
+    "description": "每次从库街区列表接口取多少条帖子；越大随机池越大",
+    "type": "int",
+    "default": 5
+  },
+  "request_rounds": {
+    "description": "一次命令随机请求多少页；越大越不容易重复",
+    "type": "int",
+    "default": 8
+  },
+  "random_page_max": {
+    "description": "随机页码上限",
+    "type": "int",
+    "default": 500
+  },
+  "max_media_per_post": {
+    "description": "单条帖子最多发送多少个正文图片/视频资源",
+    "type": "int",
+    "default": 8
+  },
+  "download_media": {
+    "description": "是否下载媒体后从本地发送；关闭后直接发送远程链接",
+    "type": "bool",
+    "default": true
+  },
+  "delete_after_send": {
+    "description": "发送后是否自动删除下载到本地的图片/视频",
+    "type": "bool",
+    "default": true
+  },
+  "download_timeout": {
+    "description": "下载单个媒体的超时时间，单位秒",
+    "type": "float",
+    "default": 25.0
+  },
+  "request_timeout": {
+    "description": "请求库街区接口的超时时间，单位秒",
+    "type": "float",
+    "default": 15.0
+  },
+  "api_base": {
+    "description": "库街区 API 根地址，通常不用改",
+    "type": "string",
+    "default": "https://api.kurobbs.com"
+  },
+  "list_endpoint": {
+    "description": "库街区列表接口路径",
+    "type": "string",
+    "default": "/forum/list"
+  },
+  "game_id": {
+    "description": "鸣潮游戏 ID",
+    "type": "int",
+    "default": 3
+  },
+  "forum_id": {
+    "description": "鸣潮 COS 板块 ID",
+    "type": "int",
+    "default": 17
+  },
+  "search_type": {
+    "description": "库街区列表排序/筛选类型",
+    "type": "int",
+    "default": 3
+  },
+  "dev_code": {
+    "description": "库街区请求头 devCode；通常不用改",
+    "type": "string",
+    "default": "H0O9l04JUG341k5UpUTMNpnGawC5Qt9p"
+  },
+  "distinct_id": {
+    "description": "库街区请求头 distinct_id；通常不用改",
+    "type": "string",
+    "default": "195be91535f592-0915a368d4173f-4c657b58-1327104-195be9153601740"
+  },
+  "debug_log": {
+    "description": "是否输出调试日志",
+    "type": "bool",
+    "default": false
+  }
+}
