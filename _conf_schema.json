@@ -74,6 +74,21 @@
     "type": "string",
     "default": "/forum/list"
   },
+  "search_endpoint": {
+    "description": "库街区帖子搜索接口路径；用于 鸣潮cos 角色名",
+    "type": "string",
+    "default": "/forum/searchPost"
+  },
+  "search_page_size": {
+    "description": "角色搜索模式每页取多少条搜索结果",
+    "type": "int",
+    "default": 10
+  },
+  "search_rounds": {
+    "description": "角色搜索模式每个搜索词请求多少页",
+    "type": "int",
+    "default": 3
+  },
   "game_id": {
     "description": "鸣潮游戏 ID",
     "type": "int",

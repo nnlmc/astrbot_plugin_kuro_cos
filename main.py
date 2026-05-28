@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import importlib
 import random
 import re
@@ -44,6 +45,31 @@ POST_TEXT_KEYS = (
     "articleContent",
     "markdownContent",
     "topicContent",
+)
+COS_KEYWORDS = (
+    "cos",
+    "coser",
+    "cosplay",
+    "正片",
+    "预告",
+    "返图",
+    "试衣",
+    "同人cos",
+    "同人 cosplay",
+    "妆造",
+    "场照",
+)
+SEARCH_KEYWORD_SUFFIXES = (
+    "cos",
+    "COS",
+    "cosplay",
+    "正片",
+    "cos正片",
+    "COS正片",
+    "同人cos",
+    "试衣",
+    "预告",
+    "返图",
 )
 REPOST_FORBIDDEN_KEYWORDS = (
     "禁止搬运",
@@ -192,8 +218,15 @@ def _get_config_value(config: AstrBotConfig | None, key: str, default: Any) -> A
 
 
 def _clean_text(value: Any, limit: int = 120) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"<[^>]+>", "", str(value or ""))
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
+
+
+def _strip_markup(value: Any) -> str:
+    text = re.sub(r"<[^>]+>", "", str(value or ""))
+    return html.unescape(text)
 
 
 def _text_from_value(value: Any) -> str:
@@ -211,8 +244,47 @@ def _collect_post_text(node: dict[str, Any]) -> str:
 
 
 def _normalize_for_keyword_match(text: str) -> str:
-    text = text.lower()
+    text = _strip_markup(text).lower()
     return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def _searchable_post_text(node: dict[str, Any]) -> str:
+    return _strip_markup(_collect_post_text(node))
+
+
+def _make_search_keywords(query: str) -> list[str]:
+    query = _clean_text(query, 40)
+    if not query:
+        return []
+    keywords: list[str] = []
+    for suffix in SEARCH_KEYWORD_SUFFIXES:
+        keywords.append(f"{query} {suffix}")
+        if re.fullmatch(r"[A-Za-z0-9_+-]+", suffix):
+            continue
+        keywords.append(f"{query}{suffix}")
+    keywords.append(query)
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for keyword in keywords:
+        keyword = re.sub(r"\s+", " ", keyword).strip()
+        if keyword and keyword.lower() not in seen:
+            seen.add(keyword.lower())
+            result.append(keyword)
+    return result
+
+
+def _is_search_result_relevant(node: dict[str, Any], query: str, *, strict_cos: bool = True) -> bool:
+    text = _searchable_post_text(node)
+    if not text:
+        return False
+    normalized_text = _normalize_for_keyword_match(text)
+    normalized_query = _normalize_for_keyword_match(query)
+    if normalized_query and normalized_query not in normalized_text:
+        return False
+    if not strict_cos:
+        return True
+    return any(_normalize_for_keyword_match(keyword) in normalized_text for keyword in COS_KEYWORDS)
 
 
 def _has_repost_forbidden_text(node: dict[str, Any]) -> bool:
@@ -329,7 +401,15 @@ def _extract_post_media(node: dict[str, Any]) -> tuple[MediaItem, ...]:
     return _dedupe_media(media)
 
 
-def _post_from_node(node: dict[str, Any]) -> KuroPost | None:
+def _extract_cover_media(node: dict[str, Any]) -> tuple[MediaItem, ...]:
+    media: list[MediaItem] = []
+    for key in ("coverImages", "coverImage", "cover", "coverUrl", "postCover", "topicCover"):
+        if key in node:
+            media.extend(_extract_from_media_container(node.get(key), "image"))
+    return _dedupe_media(media)
+
+
+def _post_from_node(node: dict[str, Any], *, allow_cover_fallback: bool = False) -> KuroPost | None:
     if _has_repost_forbidden_text(node):
         return None
 
@@ -342,6 +422,8 @@ def _post_from_node(node: dict[str, Any]) -> KuroPost | None:
         author = _clean_text(author_node.get("userName") or author_node.get("nickname") or author_node.get("name") or "", 40)
     author = author or _clean_text(node.get("userName") or node.get("nickname") or "库街区用户", 40)
     media = _extract_post_media(node)
+    if not media and allow_cover_fallback:
+        media = _extract_cover_media(node)
     if not media:
         return None
     url = f"https://www.kurobbs.com/mc/post/{post_id}" if post_id else "https://www.kurobbs.com/"
@@ -363,7 +445,7 @@ def _extract_post_list(payload: Any) -> list[dict[str, Any]]:
     "astrbot_plugin_kuro_cos",
     "Copilot",
     "获取鸣潮库街区 COS 板块图片和视频，并由机器人发送。",
-    "0.2.0",
+    "0.3.0",
 )
 class KuroCosPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
@@ -377,11 +459,15 @@ class KuroCosPlugin(Star):
 
     @filter.command("鸣潮cos")
     async def kuro_cos_command(self, event: AstrMessageEvent):
-        """获取鸣潮库街区 COS 图片/视频。"""
+        """获取鸣潮库街区 COS 图片/视频；可追加角色名搜索。"""
+        keyword = self._extract_search_keyword(event)
         async with self._lock:
-            posts = await self._fetch_random_posts()
+            posts = await self._fetch_search_posts(keyword) if keyword else await self._fetch_random_posts()
             if not posts:
-                yield event.plain_result("没找到包含 COS 图片/视频的库街区内容。")
+                if keyword:
+                    yield event.plain_result(f"没找到包含「{keyword}」的 COS 正文图片/视频。")
+                else:
+                    yield event.plain_result("没找到包含 COS 图片/视频的库街区内容。")
                 event.stop_event()
                 return
 
@@ -404,6 +490,23 @@ class KuroCosPlugin(Star):
                     self._cleanup_local_files(local_paths)
 
         event.stop_event()
+
+    @staticmethod
+    def _extract_search_keyword(event: AstrMessageEvent) -> str:
+        message = getattr(event, "message_str", "") or ""
+        getter = getattr(event, "get_message_str", None)
+        if callable(getter):
+            try:
+                message = getter() or message
+            except Exception:
+                pass
+        message = re.sub(r"\s+", " ", str(message)).strip()
+        for command_name in ("鸣潮cos",):
+            if message == command_name:
+                return ""
+            if message.startswith(f"{command_name} "):
+                return _clean_text(message[len(command_name):].strip(), 40)
+        return ""
 
     def _recall_after_send_enabled(self) -> bool:
         return bool(_get_config_value(self.config, "recall_after_send", False))
@@ -645,6 +748,112 @@ class KuroCosPlugin(Star):
             return [yield_post]
 
         self._debug("本轮没有可用正文媒体帖子")
+        return []
+
+    async def _fetch_search_posts(self, keyword: str) -> list[KuroPost]:
+        timeout = float(_get_config_value(self.config, "request_timeout", 12.0))
+        base = str(_get_config_value(self.config, "api_base", "https://api.kurobbs.com")).rstrip("/")
+        endpoint = str(_get_config_value(self.config, "search_endpoint", "/forum/searchPost"))
+        page_size = max(1, int(_get_config_value(self.config, "search_page_size", 10)))
+        search_rounds = max(1, int(_get_config_value(self.config, "search_rounds", 3)))
+        game_id = int(_get_config_value(self.config, "game_id", 3))
+        forum_id = int(_get_config_value(self.config, "forum_id", 17))
+        search_type = int(_get_config_value(self.config, "search_type", 3))
+        dev_code = str(_get_config_value(self.config, "dev_code", DEFAULT_DEV_CODE))
+        distinct_id = str(_get_config_value(self.config, "distinct_id", DEFAULT_DISTINCT_ID))
+
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "Origin": "https://www.kurobbs.com",
+            "Referer": "https://www.kurobbs.com/",
+            "User-Agent": DEFAULT_USER_AGENT,
+            "devCode": dev_code,
+            "distinct_id": distinct_id,
+            "source": "h5",
+            "token": "",
+            "version": "2.4.4",
+        }
+        url = endpoint if endpoint.startswith("http") else f"{base}/{endpoint.lstrip('/')}"
+        search_keywords = _make_search_keywords(keyword)
+        if not search_keywords:
+            return []
+
+        posts: list[KuroPost] = []
+        relaxed_posts: list[KuroPost] = []
+        recent_posts: list[KuroPost] = []
+        seen: set[str] = set()
+
+        def collect_posts(payload: Any, request_keyword: str, strict_cos: bool):
+            nodes = _extract_post_list(payload)
+            if not nodes:
+                self._debug(f"搜索接口为空 keyword={request_keyword}")
+                return
+            accepted_count = 0
+            for node in nodes:
+                if not _is_search_result_relevant(node, keyword, strict_cos=strict_cos):
+                    continue
+                post = _post_from_node(node, allow_cover_fallback=True)
+                if not post:
+                    continue
+                key = post.post_id or post.url or post.title
+                if key in seen:
+                    continue
+                seen.add(key)
+                if key in self._recent_post_ids:
+                    recent_posts.append(post)
+                elif strict_cos:
+                    posts.append(post)
+                else:
+                    relaxed_posts.append(post)
+                accepted_count += 1
+            mode = "严格" if strict_cos else "宽松"
+            self._debug(f"搜索接口完成 keyword={request_keyword} mode={mode} posts={len(nodes)} candidates={accepted_count}")
+
+        async def fetch_keyword(client: httpx.AsyncClient, request_keyword: str, strict_cos: bool):
+            for page_index in range(1, search_rounds + 1):
+                body = {
+                    "gameId": game_id,
+                    "forumId": forum_id,
+                    "searchType": search_type,
+                    "pageIndex": page_index,
+                    "pageSize": page_size,
+                    "keyword": request_keyword,
+                }
+                try:
+                    response = await client.post(url, data=body)
+                    response.raise_for_status()
+                    collect_posts(response.json(), request_keyword, strict_cos)
+                except Exception as exc:
+                    self._debug(f"搜索接口失败 url={url} keyword={request_keyword} pageIndex={page_index} error={exc!r}")
+                    break
+
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+            for request_keyword in search_keywords:
+                strict_cos = request_keyword != keyword
+                await fetch_keyword(client, request_keyword, strict_cos)
+                if len(posts) >= 8:
+                    break
+
+        candidates = posts or relaxed_posts or recent_posts
+        if not posts and not relaxed_posts and recent_posts:
+            self._debug("搜索结果均为最近发送过的帖子，使用最近候选避免空结果")
+        random.shuffle(candidates)
+        for post in candidates:
+            shuffled_media = list(post.media)
+            random.shuffle(shuffled_media)
+            yield_post = KuroPost(
+                post_id=post.post_id,
+                title=post.title,
+                summary=post.summary,
+                author=post.author,
+                url=post.url,
+                media=tuple(shuffled_media),
+            )
+            self._debug(f"搜索候选帖子 keyword={keyword} post_id={yield_post.post_id} media={len(yield_post.media)}")
+            return [yield_post]
+
+        self._debug(f"未找到搜索候选 keyword={keyword}")
         return []
 
     async def _build_post_chain(self, post: KuroPost) -> tuple[list[Any], list[str]]:
