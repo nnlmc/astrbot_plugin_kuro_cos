@@ -1,5 +1,9 @@
 # AstrBot 鸣潮库街区 COS 搬运插件
 
+<p align="center">
+  <img src="./logo.png" width="160" alt="插件 Logo">
+</p>
+
 从鸣潮库街区 COS 板块随机获取帖子，只提取帖子正文里的 COS 图片/视频，然后让机器人发送到当前聊天。
 
 ## 使用方法
