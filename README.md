@@ -13,12 +13,14 @@
 ```text
 鸣潮cos
 wwcos
+fbcos
 鸣潮cos 长离
 wwcos 长离
+fbcos 长离
 鸣潮cos 守岸人
 ```
 
-不带参数时随机获取 COS 板块内容；带角色名/人物名时，会调用库街区搜索接口组合搜索 `角色名 cos`、`角色名 正片` 等关键词，比随机抽帖子后搜正文更容易命中。插件保留 `鸣潮cos` 和 `wwcos` 两个固定命令，群聊直接发送即可触发，无需 @ 机器人，不支持在配置中自定义触发词。
+不带参数时随机获取 COS 板块内容；带角色名/人物名时，会调用库街区搜索接口组合搜索 `角色名 cos`、`角色名 正片` 等关键词，比随机抽帖子后搜正文更容易命中。插件内置 `鸣潮cos`、`wwcos` 和 `fbcos` 三个固定命令，群聊直接发送即可触发，无需 @ 机器人，不支持在配置中自定义触发词。
 
 ## 安装
 
@@ -31,8 +33,8 @@ pip install -r requirements.txt
 ## 当前策略
 
 - 只请求库街区 COS 板块：`gameId=3`、`forumId=17`、`searchType=3`；
-- `鸣潮cos` 不带参数时走随机模式：默认从 `1~80` 页里抽 `30` 页，并固定混入前段页来减少抽到空页的概率；
-- `鸣潮cos 角色名` 带参数时走搜索模式：使用 `/forum/searchPost` 组合搜索 `角色名 cos`、`角色名 正片`、`角色名 cos正片` 等关键词，并排除攻略、养成、配队、抽卡、活动等明显非 COS 结果；
+- `鸣潮cos` / `wwcos` / `fbcos` 不带参数时走随机模式：默认从 `1~80` 页里抽 `30` 页，并固定混入前段页来减少抽到空页的概率；
+- `鸣潮cos 角色名` / `wwcos 角色名` / `fbcos 角色名` 带参数时走搜索模式：使用 `/forum/searchPost` 组合搜索 `角色名 cos`、`角色名 正片`、`角色名 cos正片` 等关键词，并排除攻略、养成、配队、抽卡、活动等明显非 COS 结果；
 - 每页默认取 `20` 条，组合成候选池后随机挑选；
 - 如果随机页没有可用候选，会自动回退检查前段页，尽量避免直接返回“没找到”；
 - 单条帖子默认最多发送 `6` 个正文媒体，降低刷屏和下载失败概率；
@@ -48,6 +50,16 @@ pip install -r requirements.txt
 
 当前内置默认值偏向稳定可用：`request_rounds=30`、`random_page_max=80`、`default_page_size=20`、`search_page_size=10`、`search_rounds=3`、`max_media_per_post=6`、`request_timeout=12.0`、`download_timeout=20.0`、`recall_delay_seconds=90.0`。
 
+## 代理池配置
+
+参考 XWUID 的 `LocalProxyUrl` 思路，控制台里新增了 `proxy_url`：
+
+- `proxy_url`：本地代理/代理池链接，留空不启用；示例 `http://127.0.0.1:7890` 或 `http://user:pass@host:port`；
+- `proxy_api_requests`：库街区列表/搜索接口是否走 `proxy_url`；
+- `proxy_download_media`：下载图片/视频媒体是否走 `proxy_url`。
+
+只想代理库街区接口就关闭 `proxy_download_media`；只想代理媒体下载就关闭 `proxy_api_requests`。
+
 ## 配置重点
 
 - `request_rounds`：一次随机请求多少页，越大越不容易重复；
@@ -61,6 +73,9 @@ pip install -r requirements.txt
 - `delete_after_send`：发送后是否自动删除本地媒体；
 - `recall_after_send`：是否在发送后自动撤回机器人发出的消息；
 - `recall_delay_seconds`：发送后多少秒自动撤回，最大 `120` 秒，超过会自动按 `120` 秒处理；
+- `proxy_url`：本地代理/代理池链接，留空不启用；
+- `proxy_api_requests`：库街区列表/搜索接口是否走代理；
+- `proxy_download_media`：图片/视频媒体下载是否走代理；
 - `search_endpoint`：库街区帖子搜索接口，默认 `/forum/searchPost`；
 - `search_page_size`：角色搜索模式每页取多少条搜索结果；
 - `search_rounds`：角色搜索模式每个搜索词请求多少页；

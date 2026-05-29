@@ -1,6 +1,6 @@
 name: astrbot_plugin_kuro_cos
 display_name: 鸣潮库街区COS搬运
-version: 0.3.0
+version: 0.3.2
 author: Copilot
 desc: 获取鸣潮库街区 COS/同人内容帖子里的图片和视频，并由机器人发送到聊天。
 short_desc: 拉取库街区 COS 图片/视频并发送。

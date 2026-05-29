@@ -64,6 +64,21 @@
     "type": "float",
     "default": 12.0
   },
+  "proxy_url": {
+    "description": "本地代理/代理池地址，留空不启用；示例：http://127.0.0.1:7890。等同 XWUID 的 LocalProxyUrl 思路",
+    "type": "string",
+    "default": ""
+  },
+  "proxy_api_requests": {
+    "description": "填写 proxy_url 后，库街区列表/搜索接口是否走代理",
+    "type": "bool",
+    "default": true
+  },
+  "proxy_download_media": {
+    "description": "填写 proxy_url 后，下载图片/视频媒体是否走代理",
+    "type": "bool",
+    "default": true
+  },
   "api_base": {
     "description": "库街区 API 根地址，通常不用改",
     "type": "string",
@@ -75,7 +90,7 @@
     "default": "/forum/list"
   },
   "search_endpoint": {
-    "description": "库街区帖子搜索接口路径；用于 鸣潮cos 角色名",
+    "description": "库街区帖子搜索接口路径；用于 鸣潮cos/wwcos/fbcos 角色名",
     "type": "string",
     "default": "/forum/searchPost"
   },

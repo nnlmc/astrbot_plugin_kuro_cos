@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import html
 import importlib
+import inspect
 import random
 import re
 import time
@@ -259,6 +260,28 @@ def _get_config_value(config: AstrBotConfig | None, key: str, default: Any) -> A
         return default
 
 
+def _get_proxy_url(config: AstrBotConfig | None, *, for_download: bool = False) -> str | None:
+    enabled_key = "proxy_download_media" if for_download else "proxy_api_requests"
+    if not bool(_get_config_value(config, enabled_key, True)):
+        return None
+    proxy_url = str(_get_config_value(config, "proxy_url", "") or "").strip()
+    return proxy_url or None
+
+
+def _httpx_proxy_kwargs(proxy_url: str | None) -> dict[str, Any]:
+    if not proxy_url:
+        return {}
+    try:
+        parameters = inspect.signature(httpx.AsyncClient.__init__).parameters
+    except Exception:
+        return {"proxy": proxy_url}
+    if "proxy" in parameters:
+        return {"proxy": proxy_url}
+    if "proxies" in parameters:
+        return {"proxies": proxy_url}
+    return {}
+
+
 def _clean_text(value: Any, limit: int = 120) -> str:
     text = re.sub(r"<[^>]+>", "", str(value or ""))
     text = html.unescape(text)
@@ -506,7 +529,7 @@ def _extract_post_list(payload: Any) -> list[dict[str, Any]]:
     "astrbot_plugin_kuro_cos",
     "Copilot",
     "获取鸣潮库街区 COS 板块图片和视频，并由机器人发送。",
-    "0.3.0",
+    "0.3.2",
 )
 class KuroCosPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
@@ -518,7 +541,7 @@ class KuroCosPlugin(Star):
         self._recent_post_ids: deque[str] = deque(maxlen=80)
         self._recall_tasks: set[asyncio.Task[None]] = set()
 
-    @filter.regex(r"^(?:鸣潮cos|wwcos)(?:\s+.+)?$")
+    @filter.regex(r"^(?:鸣潮cos|wwcos|fbcos)(?:\s+.+)?$")
     async def kuro_cos_command(self, event: AstrMessageEvent):
         """获取鸣潮库街区 COS 图片/视频；可追加角色名搜索。"""
         keyword = self._extract_search_keyword(event)
@@ -562,7 +585,7 @@ class KuroCosPlugin(Star):
             except Exception:
                 pass
         message = re.sub(r"\s+", " ", str(message)).strip()
-        for command_name in ("鸣潮cos", "wwcos"):
+        for command_name in ("鸣潮cos", "wwcos", "fbcos"):
             if message == command_name:
                 return ""
             if message.startswith(f"{command_name} "):
@@ -705,6 +728,7 @@ class KuroCosPlugin(Star):
         request_rounds = max(1, int(_get_config_value(self.config, "request_rounds", 30)))
         dev_code = str(_get_config_value(self.config, "dev_code", DEFAULT_DEV_CODE))
         distinct_id = str(_get_config_value(self.config, "distinct_id", DEFAULT_DISTINCT_ID))
+        proxy_url = _get_proxy_url(self.config)
 
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -774,7 +798,12 @@ class KuroCosPlugin(Star):
             except Exception as exc:
                 self._debug(f"列表接口失败 url={url} pageIndex={page_index} error={exc!r}")
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers=headers,
+            **_httpx_proxy_kwargs(proxy_url),
+        ) as client:
             for page_index in page_indexes:
                 await fetch_page(client, page_index)
 
@@ -822,6 +851,7 @@ class KuroCosPlugin(Star):
         search_type = int(_get_config_value(self.config, "search_type", 3))
         dev_code = str(_get_config_value(self.config, "dev_code", DEFAULT_DEV_CODE))
         distinct_id = str(_get_config_value(self.config, "distinct_id", DEFAULT_DISTINCT_ID))
+        proxy_url = _get_proxy_url(self.config)
 
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -889,7 +919,12 @@ class KuroCosPlugin(Star):
                     self._debug(f"搜索接口失败 url={url} keyword={request_keyword} pageIndex={page_index} error={exc!r}")
                     break
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers=headers,
+            **_httpx_proxy_kwargs(proxy_url),
+        ) as client:
             for request_keyword in search_keywords:
                 strict_cos = request_keyword != keyword
                 await fetch_keyword(client, request_keyword, strict_cos)
@@ -963,6 +998,7 @@ class KuroCosPlugin(Star):
 
     async def _download_media(self, media: MediaItem, post_id: str, index: int) -> str | None:
         timeout = float(_get_config_value(self.config, "download_timeout", 20.0))
+        proxy_url = _get_proxy_url(self.config, for_download=True)
         suffix = _url_suffix(media.url)
         if suffix not in MEDIA_EXTENSIONS:
             suffix = ".jpg" if media.kind == "image" else ".mp4"
@@ -972,7 +1008,12 @@ class KuroCosPlugin(Star):
         target = target_dir / f"{safe_post_id}_{index}_{random.randint(1000, 9999)}{suffix}"
 
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                follow_redirects=True,
+                headers={"User-Agent": DEFAULT_USER_AGENT},
+                **_httpx_proxy_kwargs(proxy_url),
+            ) as client:
                 response = await client.get(media.url)
                 response.raise_for_status()
                 target.write_bytes(response.content)
